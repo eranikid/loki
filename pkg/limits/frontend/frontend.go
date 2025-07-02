@@ -36,8 +36,8 @@ type Frontend struct {
 	lifecyclerWatcher       *services.FailureWatcher
 
 	// Metrics.
-	streams          prometheus.Counter
-	streamsFailed    prometheus.Counter
+	streams         *prometheus.CounterVec
+	streamsFailed   *prometheus.CounterVec
 	streamsRejected *prometheus.CounterVec
 }
 
@@ -69,17 +69,19 @@ func New(cfg Config, ringName string, limitsRing ring.ReadRing, logger log.Logge
 		logger:                  logger,
 		gatherer:                gatherer,
 		assignedPartitionsCache: assignedPartitionsCache,
-		streams: promauto.With(reg).NewCounter(
+		streams: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "loki_ingest_limits_frontend_streams_total",
 				Help: "The total number of received streams.",
 			},
+			[]string{"tenant"},
 		),
-		streamsFailed: promauto.With(reg).NewCounter(
+		streamsFailed: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "loki_ingest_limits_frontend_streams_failed_total",
 				Help: "The total number of received streams that could not be checked.",
 			},
+			[]string{"tenant"},
 		),
 		streamsRejected: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
@@ -115,7 +117,7 @@ func New(cfg Config, ringName string, limitsRing ring.ReadRing, logger log.Logge
 
 // ExceedsLimits implements proto.IngestLimitsFrontendClient.
 func (f *Frontend) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsRequest) (*proto.ExceedsLimitsResponse, error) {
-	f.streams.Add(float64(len(req.Streams)))
+	f.streams.WithLabelValues(req.Tenant).Add(float64(len(req.Streams)))
 	results := make([]*proto.ExceedsLimitsResult, 0, len(req.Streams))
 	resps, err := f.gatherer.ExceedsLimits(ctx, req)
 	if err != nil {
@@ -126,7 +128,7 @@ func (f *Frontend) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsRe
 				Reason:     uint32(limits.ReasonFailed),
 			})
 		}
-		f.streamsFailed.Add(float64(len(req.Streams)))
+		f.streamsFailed.WithLabelValues(req.Tenant).Add(float64(len(req.Streams)))
 		level.Error(f.logger).Log("msg", "failed to check request against limits", "err", err)
 	} else {
 		for _, resp := range resps {
@@ -134,7 +136,7 @@ func (f *Frontend) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsRe
 				// Even if the call succeeded, some (or all) streams might
 				// still have failed.
 				if res.Reason == uint32(limits.ReasonFailed) {
-					f.streamsFailed.Inc()
+					f.streamsFailed.WithLabelValues(req.Tenant).Inc()
 				} else {
 					f.streamsRejected.WithLabelValues(req.Tenant).Inc()
 				}
