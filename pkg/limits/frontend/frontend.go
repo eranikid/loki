@@ -36,9 +36,9 @@ type Frontend struct {
 	lifecyclerWatcher       *services.FailureWatcher
 
 	// Metrics.
-	streams         prometheus.Counter
-	streamsFailed   prometheus.Counter
-	streamsRejected prometheus.Counter
+	streams          prometheus.Counter
+	streamsFailed    prometheus.Counter
+	streamsRejected *prometheus.CounterVec
 }
 
 // New returns a new Frontend.
@@ -81,11 +81,12 @@ func New(cfg Config, ringName string, limitsRing ring.ReadRing, logger log.Logge
 				Help: "The total number of received streams that could not be checked.",
 			},
 		),
-		streamsRejected: promauto.With(reg).NewCounter(
+		streamsRejected: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "loki_ingest_limits_frontend_streams_rejected_total",
 				Help: "The total number of rejected streams.",
 			},
+			[]string{"tenant"},
 		),
 	}
 
@@ -135,7 +136,7 @@ func (f *Frontend) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsRe
 				if res.Reason == uint32(limits.ReasonFailed) {
 					f.streamsFailed.Inc()
 				} else {
-					f.streamsRejected.Inc()
+					f.streamsRejected.WithLabelValues(req.Tenant).Inc()
 				}
 			}
 			results = append(results, resp.Results...)
