@@ -48,7 +48,6 @@ type Group struct {
 	queryOffset           *time.Duration
 	limit                 int
 	rules                 []Rule
-	sourceTenants         []string
 	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
 	staleSeries           []labels.Labels
 	opts                  *ManagerOptions
@@ -73,8 +72,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	appOpts                       *storage.AppendOptions
-	alignEvaluationTimeOnInterval bool
+	appOpts *storage.AppendOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -85,17 +83,15 @@ type Group struct {
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
-	Name, File                    string
-	Interval                      time.Duration
-	Limit                         int
-	Rules                         []Rule
-	SourceTenants                 []string
-	ShouldRestore                 bool
-	Opts                          *ManagerOptions
-	QueryOffset                   *time.Duration
-	done                          chan struct{}
-	EvalIterationFunc             GroupEvalIterationFunc
-	AlignEvaluationTimeOnInterval bool
+	Name, File        string
+	Interval          time.Duration
+	Limit             int
+	Rules             []Rule
+	ShouldRestore     bool
+	Opts              *ManagerOptions
+	QueryOffset       *time.Duration
+	done              chan struct{}
+	EvalIterationFunc GroupEvalIterationFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -131,24 +127,22 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	return &Group{
-		name:                          o.Name,
-		file:                          o.File,
-		interval:                      o.Interval,
-		queryOffset:                   o.QueryOffset,
-		limit:                         o.Limit,
-		rules:                         o.Rules,
-		shouldRestore:                 o.ShouldRestore,
-		opts:                          opts,
-		sourceTenants:                 o.SourceTenants,
-		seriesInPreviousEval:          make([]map[string]labels.Labels, len(o.Rules)),
-		done:                          make(chan struct{}),
-		managerDone:                   o.done,
-		terminated:                    make(chan struct{}),
-		logger:                        opts.Logger.With("file", o.File, "group", o.Name),
-		metrics:                       metrics,
-		evalIterationFunc:             evalIterationFunc,
-		appOpts:                       &storage.AppendOptions{DiscardOutOfOrder: true},
-		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		queryOffset:          o.QueryOffset,
+		limit:                o.Limit,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		done:                 make(chan struct{}),
+		managerDone:          o.done,
+		terminated:           make(chan struct{}),
+		logger:               opts.Logger.With("file", o.File, "group", o.Name),
+		metrics:              metrics,
+		evalIterationFunc:    evalIterationFunc,
+		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 	}
 }
 
@@ -207,10 +201,6 @@ func (g *Group) Interval() time.Duration { return g.interval }
 
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
-
-// SourceTenants returns the source tenants for the group.
-// If it's empty or nil, then the owning user/tenant is considered to be the source tenant.
-func (g *Group) SourceTenants() []string { return g.sourceTenants }
 
 func (g *Group) Logger() *slog.Logger { return g.logger }
 
@@ -429,11 +419,9 @@ func (g *Group) setLastEvalTimestamp(ts time.Time) {
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
-	var offset int64
-	if !g.alignEvaluationTimeOnInterval {
-		offset = int64(g.hash() % uint64(g.interval))
-	}
 	var (
+		offset = int64(g.hash() % uint64(g.interval))
+
 		// This group's evaluation times differ from the perfect time intervals by `offset` nanoseconds.
 		// But we can only use `% interval` to align with the interval. And `% interval` will always
 		// align with the perfect time intervals, instead of this group's. Because of this we add
@@ -904,35 +892,9 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
-	if g.alignEvaluationTimeOnInterval != ng.alignEvaluationTimeOnInterval {
-		return false
-	}
-
 	for i, gr := range g.rules {
 		if gr.String() != ng.rules[i].String() {
 			return false
-		}
-	}
-	{
-		// compare source tenants
-		if len(g.sourceTenants) != len(ng.sourceTenants) {
-			return false
-		}
-
-		copyAndSort := func(x []string) []string {
-			copied := make([]string, len(x))
-			copy(copied, x)
-			slices.Sort(copied)
-			return copied
-		}
-
-		ngSourceTenantsCopy := copyAndSort(ng.sourceTenants)
-		gSourceTenantsCopy := copyAndSort(g.sourceTenants)
-
-		for i := range ngSourceTenantsCopy {
-			if gSourceTenantsCopy[i] != ngSourceTenantsCopy[i] {
-				return false
-			}
 		}
 	}
 
