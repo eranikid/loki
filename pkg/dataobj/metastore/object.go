@@ -99,6 +99,23 @@ func iterStorePaths(tenantID string, start, end time.Time) iter.Seq[string] {
 	}
 }
 
+func multiTenantMetastorePath(window time.Time) string {
+	return fmt.Sprintf("multi-tenant/metastore/%s.store", window.Format(time.RFC3339))
+}
+
+func multiTenantIterStorePaths(start, end time.Time) iter.Seq[string] {
+	minMetastoreWindow := start.Truncate(metastoreWindowSize).UTC()
+	maxMetastoreWindow := end.Truncate(metastoreWindowSize).UTC()
+
+	return func(yield func(t string) bool) {
+		for metastoreWindow := minMetastoreWindow; !metastoreWindow.After(maxMetastoreWindow); metastoreWindow = metastoreWindow.Add(metastoreWindowSize) {
+			if !yield(multiTenantMetastorePath(metastoreWindow)) {
+				return
+			}
+		}
+	}
+}
+
 func NewObjectMetastore(bucket objstore.Bucket, logger log.Logger, reg prometheus.Registerer) *ObjectMetastore {
 	store := &ObjectMetastore{
 		bucket:      bucket,
