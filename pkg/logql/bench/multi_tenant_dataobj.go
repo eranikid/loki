@@ -10,14 +10,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/loki/v3/pkg/dataobj/consumer/logsobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
-	"github.com/grafana/loki/v3/pkg/dataobj/querier"
 	"github.com/grafana/loki/v3/pkg/dataobj/uploader"
+	"github.com/grafana/loki/v3/pkg/engine"
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql"
 )
@@ -34,6 +33,7 @@ type MultiTenantDataObjStore struct {
 	bucket objstore.Bucket
 
 	logger log.Logger
+	engine logql.Engine
 }
 
 // NewDataObjStore creates a new DataObjStore
@@ -56,6 +56,8 @@ func NewMultiTenantDataObjStore(dir string, tenantIDs []string) (*MultiTenantDat
 		return nil, fmt.Errorf("failed to create bucket: %w", err)
 	}
 
+	logger := level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowWarn())
+
 	builder, err := logsobj.NewMultiTenantBuilder(logsobj.BuilderConfig{
 		TargetPageSize:    2 * 1024 * 1024,   // 2MB
 		TargetObjectSize:  128 * 1024 * 1024, // 128MB
@@ -68,9 +70,14 @@ func NewMultiTenantDataObjStore(dir string, tenantIDs []string) (*MultiTenantDat
 		return nil, fmt.Errorf("failed to create builder: %w", err)
 	}
 
-	logger := level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowWarn())
 	meta := metastore.NewMultiTenantUpdater(metastore.UpdaterConfig{}, bucket, logger)
 	uploader := uploader.NewMultiTenant(uploader.Config{SHAPrefixSize: 2}, bucket, logger)
+
+	engineOpts := logql.EngineOpts{
+		EnableV2Engine: true,
+		BatchSize:      512,
+	}
+	queryEngine := engine.New(engineOpts, bucket, logql.NoLimits, nil, logger, true)
 
 	return &MultiTenantDataObjStore{
 		dir:       storeDir,
@@ -81,6 +88,7 @@ func NewMultiTenantDataObjStore(dir string, tenantIDs []string) (*MultiTenantDat
 		bucket:    bucket,
 		logger:    logger,
 		tenantIDs: tenantIDs,
+		engine:    queryEngine,
 	}, nil
 }
 
@@ -103,10 +111,6 @@ func (s *MultiTenantDataObjStore) Write(_ context.Context, streams []logproto.St
 		}
 	}
 	return nil
-}
-
-func (s *MultiTenantDataObjStore) Querier() (logql.Querier, error) {
-	return querier.NewStore(s.bucket, s.logger, metastore.NewMultiTenantObjectMetastore(s.bucket, s.logger, prometheus.DefaultRegisterer)), nil
 }
 
 func (s *MultiTenantDataObjStore) flush() error {
