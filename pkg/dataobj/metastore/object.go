@@ -151,7 +151,7 @@ func (m *ObjectMetastore) Streams(ctx context.Context, start, end time.Time, mat
 
 	// Get all metastore paths for the time range
 	var storePaths []string
-	for path := range multiTenantIterStorePaths(start, end) {
+	for path := range iterStorePaths(tenantID, start, end) {
 		storePaths = append(storePaths, path)
 	}
 
@@ -175,7 +175,7 @@ func (m *ObjectMetastore) StreamIDs(ctx context.Context, start, end time.Time, m
 
 	// Get all metastore paths for the time range
 	var storePaths []string
-	for path := range multiTenantIterStorePaths(start, end) {
+	for path := range iterStorePaths(tenantID, start, end) {
 		storePaths = append(storePaths, path)
 	}
 	level.Debug(m.logger).Log("msg", "got metastore object paths", "tenant", tenantID, "paths", strings.Join(storePaths, ","))
@@ -481,7 +481,7 @@ func (m *ObjectMetastore) listStreamsFromObjects(ctx context.Context, tenant str
 
 			return forEachStream(ctx, tenant, object, predicate, func(stream streams.Stream) {
 				addLabels(&mu, foundStreams, &stream.Labels)
-			})
+			}, false)
 		})
 	}
 
@@ -516,7 +516,7 @@ func (m *ObjectMetastore) listStreamIDsFromObjects(ctx context.Context, tenant s
 
 			return forEachStream(ctx, tenant, object, predicate, func(stream streams.Stream) {
 				streamIDs[idx] = append(streamIDs[idx], stream.ID)
-			})
+			}, false)
 		})
 	}
 
@@ -552,7 +552,7 @@ func (m *ObjectMetastore) getSectionsForStreams(ctx context.Context, tenant stri
 			streamReadTimer := prometheus.NewTimer(m.metrics.streamFilterStreamsReadDuration)
 			err = forEachStream(ctx, tenant, idxObject, streamPredicate, func(stream streams.Stream) {
 				matchingStreamIDs = append(matchingStreamIDs, stream.ID)
-			})
+			}, false)
 			if err != nil {
 				return fmt.Errorf("reading streams from index: %w", err)
 			}
@@ -691,7 +691,7 @@ func (m *ObjectMetastore) listObjects(ctx context.Context, tenant string, path s
 		if ok {
 			objectPaths = append(objectPaths, objPath)
 		}
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +748,7 @@ func forEachIndexPointer(ctx context.Context, object *dataobj.Object, predicate 
 	return nil
 }
 
-func forEachStream(ctx context.Context, tenant string, object *dataobj.Object, predicate streams.RowPredicate, f func(streams.Stream)) error {
+func forEachStream(ctx context.Context, tenant string, object *dataobj.Object, predicate streams.RowPredicate, f func(streams.Stream), checkTenant bool) error {
 	var reader streams.RowReader
 	defer reader.Close()
 
@@ -763,7 +763,7 @@ func forEachStream(ctx context.Context, tenant string, object *dataobj.Object, p
 		if err != nil {
 			return fmt.Errorf("opening section: %w", err)
 		}
-		if sec.TenantID() != tenant {
+		if checkTenant && sec.TenantID() != tenant {
 			continue
 		}
 

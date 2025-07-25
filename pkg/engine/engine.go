@@ -31,7 +31,7 @@ func New(opts logql.EngineOpts, bucket objstore.Bucket, limits logql.Limits, reg
 	var ms metastore.Metastore
 	if bucket != nil {
 		metastoreBucket := objstore.NewPrefixedBucket(bucket, opts.CataloguePath)
-		ms = metastore.NewObjectMetastore(metastoreBucket, logger, reg)
+		ms = metastore.NewMultiTenantObjectMetastore(metastoreBucket, logger, reg)
 	}
 
 	if opts.BatchSize <= 0 {
