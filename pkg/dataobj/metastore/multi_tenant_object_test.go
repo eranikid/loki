@@ -208,7 +208,7 @@ func queryMultienantMetastore(t *testing.T, tenantID string, mfunc func(context.
 	start := now.Add(-time.Hour * 5)
 	end := now.Add(time.Hour * 5)
 
-	builder := newMultiTenantTestDataBuilder(t, tenantID)
+	builder := newMultiTenantTestDataBuilder(t)
 
 	for _, stream := range testStreams {
 		builder.addStreamAndFlush(tenantID, stream)
@@ -224,7 +224,7 @@ func queryMultienantMetastore(t *testing.T, tenantID string, mfunc func(context.
 	mfunc(ctx, start, end, mstore)
 }
 
-func newMultiTenantTestDataBuilder(t *testing.T, tenantID string) *testMultiTenantDataBuilder {
+func newMultiTenantTestDataBuilder(t *testing.T) *testMultiTenantDataBuilder {
 	bucket := objstore.NewInMemBucket()
 
 	builder, err := logsobj.NewMultiTenantBuilder(logsobj.BuilderConfig{
