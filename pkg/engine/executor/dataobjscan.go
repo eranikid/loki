@@ -155,7 +155,7 @@ func (s *dataobjScan) initStreams(ctx context.Context) error {
 			return fmt.Errorf("opening streams section: %w", err)
 		}
 
-		if sec.TenantID() != tenantID {
+		if sec.TenantID() != "" && sec.TenantID() != tenantID {
 			continue
 		}
 
