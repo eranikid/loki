@@ -138,10 +138,7 @@ func (s *dataobjScan) initStreams(ctx context.Context) error {
 	var sr streams.RowReader
 	defer sr.Close()
 
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return err
-	}
+	tenantID, _ := tenant.TenantID(ctx)
 
 	streamsBuf := make([]streams.Stream, s.opts.batchSize)
 
